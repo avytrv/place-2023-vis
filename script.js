@@ -22,3 +22,53 @@ function calcPolygonArea(vertices) {
 	const area = Math.floor(Math.abs(total));
 	return area;
 }
+
+function parsePeriodToArray(periodString) {
+	const periods = periodString
+    .replaceAll(', T', '')
+    .replaceAll(' ', '')
+    .split(',');
+  const periodArray = [];
+
+  for (const period of periods) {
+    periodArray.push(
+      period
+        .split('-')
+        .map(x => parseInt(x))
+    );
+  }
+  
+  return periodArray;
+}
+
+const atlasData = [];
+
+// Fetch and prepare data for visualization
+getAtlasJson().then((atlasJson) => {
+  for (const entry of atlasJson) {
+    for (const [periodString, vertices] of Object.entries(entry.path)) {
+      const periodArray = parsePeriodToArray(periodString);
+      const area = calcPolygonArea(vertices);
+      for (const period of periodArray) {
+        if (period.length == 1) {
+          atlasData.push({
+            'id': entry.id,
+            'name': entry.name,
+            'time': period[0],
+            'area': area,
+          });
+        } else if (period.length == 2) {
+          for (let i = period[0]; i <= period[1]; i++) {
+            atlasData.push({
+              'id': entry.id,
+              'name': entry.name,
+              'time': i,
+              'area': area,
+            });
+          }
+        }
+      }
+    }
+  }
+  console.log(atlasData);
+});
