@@ -1,10 +1,6 @@
-const ATLAS_JSON_URL = 'https://raw.githubusercontent.com/placeAtlas/atlas-2023/master/web/atlas.json';
+import timestamps from './timestamps.js';
 
-async function getAtlasJson() {
-  const response = await fetch(ATLAS_JSON_URL);
-  return response.json();
-}
-
+// HELPER METHODS
 // Adapted from Place Atlas 2023 source code
 function calcPolygonArea(vertices) {
 	let total = 0;
@@ -41,9 +37,16 @@ function parsePeriodToArray(periodString) {
   return periodArray;
 }
 
+// PREPARING DATASET
+const ATLAS_JSON_URL = 'https://raw.githubusercontent.com/placeAtlas/atlas-2023/master/web/atlas.json';
+
+async function getAtlasJson() {
+  const response = await fetch(ATLAS_JSON_URL);
+  return response.json();
+}
+
 const atlasData = [];
 
-// Fetch and prepare data for visualization
 getAtlasJson().then((atlasJson) => {
   for (const entry of atlasJson) {
     for (const [periodString, vertices] of Object.entries(entry.path)) {
@@ -62,7 +65,7 @@ getAtlasJson().then((atlasJson) => {
             atlasData.push({
               'id': entry.id,
               'name': entry.name,
-              'time': i,
+              'time': timestamps[i],
               'area': area,
             });
           }
@@ -70,5 +73,4 @@ getAtlasJson().then((atlasJson) => {
       }
     }
   }
-  console.log(atlasData);
 });
