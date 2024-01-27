@@ -1,4 +1,5 @@
 import timestamps from './timestamps.js';
+import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 // HELPER METHODS
 // Adapted from Place Atlas 2023 source code
@@ -37,6 +38,19 @@ function parsePeriodToArray(periodString) {
   return periodArray;
 }
 
+function rank(value) {
+  if (namesMap) {
+    const data = Array.from(Object.keys(namesMap), id => ({
+      id: +id,
+      name: namesMap[+id],
+      value: value(+id)
+    }));
+    data.sort((a, b) => d3.descending(a.value, b.value));
+    for (let i = 0; i < data.length; ++i) data[i].rank = Math.min(n, i);
+    return data;
+  }
+}
+
 // PREPARING DATASET
 const ATLAS_JSON_URL = 'https://raw.githubusercontent.com/placeAtlas/atlas-2023/master/web/atlas.json';
 
@@ -45,32 +59,62 @@ async function getAtlasJson() {
   return response.json();
 }
 
-const atlasData = [];
+const n = 12;
+const k = 10;
+let namesMap;
+let atlasData = [];
+let datevalues;
+let keyframes;
+let nameframes;
 
-getAtlasJson().then((atlasJson) => {
-  for (const entry of atlasJson) {
-    for (const [periodString, vertices] of Object.entries(entry.path)) {
-      const periodArray = parsePeriodToArray(periodString);
-      const area = calcPolygonArea(vertices);
-      for (const period of periodArray) {
-        if (period.length == 1) {
-          atlasData.push({
-            'id': entry.id,
-            'name': entry.name,
-            'time': period[0],
-            'area': area,
-          });
-        } else if (period.length == 2) {
-          for (let i = period[0]; i <= period[1]; i++) {
+getAtlasJson()
+  .then((atlasJson) => {
+    namesMap = atlasJson.reduce((map, obj) => {
+      map[obj.id] = obj.name;
+      return map;
+    }, {});
+    
+    for (const entry of atlasJson) {
+      for (const [periodString, vertices] of Object.entries(entry.path)) {
+        const periodArray = parsePeriodToArray(periodString);
+        const area = calcPolygonArea(vertices);
+        for (const period of periodArray) {
+          if (period.length == 1) {
             atlasData.push({
               'id': entry.id,
-              'name': entry.name,
-              'time': timestamps[i],
-              'area': area,
+              'time': timestamps[0],
+              'value': area,
             });
+          } else if (period.length == 2) {
+            for (let i = period[0]; i <= period[1]; i++) {
+              atlasData.push({
+                'id': entry.id,
+                'time': timestamps[i],
+                'value': area,
+              });
+            }
           }
         }
       }
     }
+  })
+.then(() => {
+  datevalues = Array.from(d3.rollup(atlasData, ([d]) => d.value, d => new Date(d.time * 1000), d => d.id))
+    .sort(([a], [b]) => d3.ascending(a, b));
+
+  keyframes = [];
+  let ka, a, kb, b;
+  for ([[ka, a], [kb, b]] of d3.pairs(datevalues)) {
+    for (let i = 0; i < k; ++i) {
+      const t = i / k;
+      keyframes.push([
+        new Date(ka * (1 - t) + kb * t),
+        rank(id => (a.get(id) || 0) * (1 - t) + (b.get(id) || 0) * t)
+      ]);
+    }
   }
+  keyframes.push([new Date(kb), rank(id => b.get(id) || 0)]);
+
+  nameframes = d3.groups(keyframes.flatMap(([, data]) => data), d => d.id);
+  console.log(nameframes);
 });
