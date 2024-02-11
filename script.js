@@ -59,7 +59,7 @@ function next(i, keyframe) {
   return (i < keyframes.length - 1) ? nameframes.get(keyframe.id)[i + 1] : nameframes.get(keyframe.id)[i];
 }
 
-const formatNumber = d3.format(",d");
+const formatNumber = d3.format(',d');
 
 // PREPARING DATASET
 const ATLAS_JSON_URL = 'https://raw.githubusercontent.com/placeAtlas/atlas-2023/master/web/atlas.json';
@@ -78,7 +78,7 @@ let keyframes;
 let nameframes;
 
 const margin = ({top: 16, right: 6, bottom: 6, left: 0});
-const barSize = 48;
+const barSize = 24;
 const width = 800;
 const height = margin.top + barSize * n + margin.bottom;
 const duration = 250;
@@ -87,6 +87,8 @@ const y = d3.scaleBand()
   .domain(d3.range(n + 1))
   .rangeRound([margin.top, margin.top + barSize * (n + 1 + 0.1)])
   .padding(0.1);
+const formatDate = d3.utcFormat("%B %d, %Y %H:%M (UTC)");
+const colorScale = d3.scaleOrdinal(d3.schemeSet3);
 
 async function fetchData() {
   const atlasJson = await getAtlasJson();
@@ -137,15 +139,12 @@ async function calculateKeyframes() {
     }
   }
   keyframes.push([new Date(kb), rank(id => b.get(id) || 0)]);
-  console.log(keyframes);
-
   nameframes = d3.group(keyframes.flatMap(([, data]) => data), d => d.id);
-  console.log(nameframes);
 }
 
 function bars(svg) {
   let bar = svg.append('g')
-    .attr('fill-opacity', 0.2)
+    .attr('fill-opacity', 0.6)
     .selectAll('rect');
 
   return ([date, data], i, transition) => bar = bar
@@ -154,7 +153,7 @@ function bars(svg) {
     })
     .join(
       enter => enter.append('rect')
-        .attr('fill', 'black')
+        .attr('fill', d => colorScale(d.id))
         .attr('height', y.bandwidth())
         .attr('x', x(0))
         .attr('y', d => y(prev(i, d).rank))
@@ -170,41 +169,73 @@ function bars(svg) {
 }
 
 function labels(svg) {
-  let label = svg.append("g")
-      .style("font", "bold 12px var(--sans-serif)")
-      .style("font-variant-numeric", "tabular-nums")
-      .attr("text-anchor", "end")
-    .selectAll("text");
+  let label = svg.append('g')
+      .style('font', 'bold 6px sans-serif')
+      .style('font-variant-numeric', 'tabular-nums')
+      .attr('text-anchor', 'end')
+    .selectAll('text');
 
   return ([date, data], i, transition) => label = label
     .data(data.slice(0, n), d => d.id)
     .join(
-      enter => enter.append("text")
-        .attr("transform", d => `translate(${x(prev(i, d).value)},${y(prev(i, d).rank)})`)
-        .attr("y", y.bandwidth() / 2)
-        .attr("x", -6)
-        .attr("dy", "-0.25em")
+      enter => enter.append('text')
+        .attr('transform', d => `translate(${x(prev(i, d).value)},${y(prev(i, d).rank)})`)
+        .attr('y', y.bandwidth() / 2)
+        .attr('x', -6)
+        .attr('dy', '-0.25em')
         .text(d => d.name)
-        .call(text => text.append("tspan")
-          .attr("fill-opacity", 0.7)
-          .attr("font-weight", "normal")
-          .attr("x", -6)
-          .attr("dy", "1.15em")),
+        .call(text => text.append('tspan')
+          .attr('fill-opacity', 0.7)
+          .attr('font-weight', 'normal')
+          .attr('x', -6)
+          .attr('dy', '1.15em')),
       update => update,
       exit => exit.transition(transition).remove()
-        .attr("transform", d => `translate(${x(next(i, d).value)},${y(next(i, d).rank)})`)
-        .call(g => g.select("tspan")
+        .attr('transform', d => `translate(${x(next(i, d).value)},${y(next(i, d).rank)})`)
+        .call(g => g.select('tspan')
                     .textTween((d) => d3.interpolateRound(d.value, next(i, d).value))
              )
     )
     .call(bar => bar.transition(transition)
-      .attr("transform", d => `translate(${x(d.value)},${y(d.rank)})`)
-      .call(g => g.select("tspan")
+      .attr('transform', d => `translate(${x(d.value)},${y(d.rank)})`)
+      .call(g => g.select('tspan')
                   .textTween((d) => (t) => formatNumber(
                     d3.interpolateNumber(prev(i, d).value, d.value)(t)
                   ))
            )
     )
+}
+
+function axis(svg) {
+  const g = svg.append('g')
+      .attr('transform', `translate(0,${margin.top})`);
+
+  const axis = d3.axisTop(x)
+      .ticks(width / 160)
+      .tickSizeOuter(0)
+      .tickSizeInner(-barSize * (n + y.padding()));
+
+  return (_, transition) => {
+    g.transition(transition).call(axis);
+    g.select('.tick:first-of-type text').remove();
+    g.selectAll('.tick:not(:first-of-type) line').attr('stroke', 'white');
+    g.select('.domain').remove();
+  };
+}
+
+function ticker(svg) {
+  const now = svg.append('text')
+      .style('font', `bold ${barSize}px sans-serif`)
+      .style('font-variant-numeric', 'tabular-nums')
+      .attr('text-anchor', 'end')
+      .attr('x', width - 6)
+      .attr('y', margin.top + barSize * (n - 0.45))
+      .attr('dy', '0.32em')
+      .text(formatDate(keyframes[0][0]));
+
+  return ([date], transition) => {
+    transition.end().then(() => now.text(formatDate(date)));
+  };
 }
 
 async function main() {
@@ -217,6 +248,8 @@ async function main() {
 
   const updateBars = bars(svg);
   const updateLabels = labels(svg);
+  const updateAxis = axis(svg);
+  const updateTicker = ticker(svg);
 
   for (let i = 0; i < keyframes.length; ++i) {
     const keyframe = keyframes[i];
@@ -228,9 +261,10 @@ async function main() {
 
     updateBars(keyframe, i, transition);
     updateLabels(keyframe, i, transition);
+    updateAxis(keyframe, transition);
+    updateTicker(keyframe, transition);
 
     await transition.end();
-    console.log(i);
   }
 }
 
