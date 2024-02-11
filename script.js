@@ -1,9 +1,9 @@
-import timestamps from './timestamps.js';
 import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
+import timestamps from './timestamps.js';
 
 // HELPER METHODS
-// Adapted from Place Atlas 2023 source code
 function calcPolygonArea(vertices) {
+  // Adapted from Place Atlas 2023 source code
 	let total = 0;
 
 	for (let i = 0, l = vertices.length; i < l; i++) {
@@ -51,6 +51,16 @@ function rank(value) {
   }
 }
 
+function prev(i, keyframe) {
+  return (i > 0) ? nameframes.get(keyframe.id)[i - 1] : nameframes.get(keyframe.id)[i];
+}
+
+function next(i, keyframe) {
+  return (i < keyframes.length - 1) ? nameframes.get(keyframe.id)[i + 1] : nameframes.get(keyframe.id)[i];
+}
+
+const formatNumber = d3.format(",d");
+
 // PREPARING DATASET
 const ATLAS_JSON_URL = 'https://raw.githubusercontent.com/placeAtlas/atlas-2023/master/web/atlas.json';
 
@@ -60,7 +70,7 @@ async function getAtlasJson() {
 }
 
 const n = 12;
-const k = 1;
+const k = 2;
 let namesMap = {};
 let atlasData = [];
 let datevalues;
@@ -135,7 +145,7 @@ async function calculateKeyframes() {
 
 function bars(svg) {
   let bar = svg.append('g')
-    .attr('fill-opacity', 0.6)
+    .attr('fill-opacity', 0.2)
     .selectAll('rect');
 
   return ([date, data], i, transition) => bar = bar
@@ -147,16 +157,54 @@ function bars(svg) {
         .attr('fill', 'black')
         .attr('height', y.bandwidth())
         .attr('x', x(0))
-        .attr('y', d => y((i > 0 ? nameframes.get(d.id)[i - 1] : nameframes.get(d.id)[i]).rank))
-        .attr('width', d => x((i > 0 ? nameframes.get(d.id)[i - 1] : nameframes.get(d.id)[i]).value) - x(0)),
+        .attr('y', d => y(prev(i, d).rank))
+        .attr('width', d => x(prev(i, d).value) - x(0)),
       update => update,
       exit => exit.transition(transition).remove()
-        .attr('y', d => y((i < keyframes.length - 1 ? nameframes.get(d.id)[i + 1] : nameframes.get(d.id)[i]).rank))
-        .attr('width', d => x((i < keyframes.length - 1 ? nameframes.get(d.id)[i + 1] : nameframes.get(d.id)[i]).value) - x(0))
+        .attr('y', d => y(next(i, d).rank))
+        .attr('width', d => x(next(i, d).value) - x(0))
     )
     .call(bar => bar.transition(transition)
       .attr('y', d => y(d.rank))
       .attr('width', d => x(d.value) - x(0)));
+}
+
+function labels(svg) {
+  let label = svg.append("g")
+      .style("font", "bold 12px var(--sans-serif)")
+      .style("font-variant-numeric", "tabular-nums")
+      .attr("text-anchor", "end")
+    .selectAll("text");
+
+  return ([date, data], i, transition) => label = label
+    .data(data.slice(0, n), d => d.id)
+    .join(
+      enter => enter.append("text")
+        .attr("transform", d => `translate(${x(prev(i, d).value)},${y(prev(i, d).rank)})`)
+        .attr("y", y.bandwidth() / 2)
+        .attr("x", -6)
+        .attr("dy", "-0.25em")
+        .text(d => d.name)
+        .call(text => text.append("tspan")
+          .attr("fill-opacity", 0.7)
+          .attr("font-weight", "normal")
+          .attr("x", -6)
+          .attr("dy", "1.15em")),
+      update => update,
+      exit => exit.transition(transition).remove()
+        .attr("transform", d => `translate(${x(next(i, d).value)},${y(next(i, d).rank)})`)
+        .call(g => g.select("tspan")
+                    .textTween((d) => d3.interpolateRound(d.value, next(i, d).value))
+             )
+    )
+    .call(bar => bar.transition(transition)
+      .attr("transform", d => `translate(${x(d.value)},${y(d.rank)})`)
+      .call(g => g.select("tspan")
+                  .textTween((d) => (t) => formatNumber(
+                    d3.interpolateNumber(prev(i, d).value, d.value)(t)
+                  ))
+           )
+    )
 }
 
 async function main() {
@@ -168,6 +216,7 @@ async function main() {
     .attr('viewBox', [0, 0, width, height]);
 
   const updateBars = bars(svg);
+  const updateLabels = labels(svg);
 
   for (let i = 0; i < keyframes.length; ++i) {
     const keyframe = keyframes[i];
@@ -178,6 +227,7 @@ async function main() {
     x.domain([0, keyframe[1][0].value]);
 
     updateBars(keyframe, i, transition);
+    updateLabels(keyframe, i, transition);
 
     await transition.end();
     console.log(i);
